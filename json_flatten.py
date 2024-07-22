@@ -27,13 +27,14 @@ For example:
 Flattens to:
 
     {
-        "this.is.nested.[0].nested_dict_one$int": "10",
-        "this.is.nested.[1].nested_dict_two$float": "20.5",
-        "this.other_types.true$bool": "True",
-        "this.other_types.false$bool": "False",
-        "this.other_types.none$none": "None",
+        "this.is.nested[0].nested_dict_one": 10,
+        "this.is.nested[1].nested_dict_two": 20.5,
+        "this.other_types.true": True,
+        "this.other_types.false": False,
+        "this.other_types.none": None,
     }
 """
+
 import re
 
 
@@ -42,35 +43,39 @@ def _object_to_rows(obj, prefix=None):
     dot_prefix = prefix and (prefix + ".") or ""
     if isinstance(obj, dict):
         if not obj:
-            rows.append(((prefix or "") + "$empty", "{}"))
+            rows.append(((prefix or ""), {}))
         else:
             for key, item in obj.items():
                 rows.extend(_object_to_rows(item, prefix=dot_prefix + key))
     elif isinstance(obj, (list, tuple)):
         if len(obj) == 0:
-            rows.append(((prefix or "") + "$emptylist", "[]"))
+            rows.append(((prefix or ""), []))
         for i, item in enumerate(obj):
-            rows.extend(_object_to_rows(item, prefix=dot_prefix + "[{}]".format(i)))
+            if isinstance(item, str) or isinstance(item, int):
+                rows.append((prefix, obj))
+            else:
+                rows.extend(_object_to_rows(item, prefix=dot_prefix + "[{}]".format(i)))
     elif obj is None:
-        rows.append(((prefix or "") + "$none", "None"))
+        rows.append(((prefix or ""), None))
     elif isinstance(obj, bool):
-        rows.append(((prefix or "") + "$bool", str(obj)))
+        rows.append(((prefix or ""), obj))
     elif isinstance(obj, int):
-        rows.append(((prefix or "") + "$int", str(obj)))
+        rows.append(((prefix or ""), obj))
     elif isinstance(obj, float):
-        rows.append(((prefix or "") + "$float", str(obj)))
+        rows.append(((prefix or ""), obj))
     else:
-        rows.append((prefix, str(obj)))
+        rows.append((prefix, obj))
     return rows
 
 
 def flatten(obj):
+    if obj == {}:
+        return {}
     if not isinstance(obj, dict):
         raise TypeError("Expected dict, got {}".format(type(obj)))
     return dict(_object_to_rows(obj))
 
 
-_types_re = re.compile(r".*\$(none|bool|int|float|empty|emptylist)$")
 _int_key_re = re.compile(r"\[(\d+)\]")
 
 
@@ -83,17 +88,6 @@ def unflatten(data):
         for bit in path:
             current[bit] = current.get(bit) or {}
             current = current[bit]
-        # Now deal with $type suffixes:
-        if _types_re.match(lastkey):
-            lastkey, lasttype = lastkey.rsplit("$", 2)
-            value = {
-                "int": int,
-                "float": float,
-                "empty": lambda v: {},
-                "emptylist": lambda v: [],
-                "bool": lambda v: v.lower() == "true",
-                "none": lambda v: None,
-            }.get(lasttype, lambda v: v)(value)
         current[lastkey] = value
 
     # We handle foo.[0].one, foo.[1].two syntax in a second pass,
